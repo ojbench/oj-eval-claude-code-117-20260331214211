@@ -12,11 +12,11 @@ enum class ReplacementPolicy { kDEFAULT = 0, kFIFO, kLRU, kMRU, kLRU_K };
  */
 class PageNode {
 public:
-  PageNode() : page_id_(0), timestamp_(0), access_count_(0),
+  PageNode() : page_id_(0), timestamp_(0), insertion_time_(0), access_count_(0),
                access_history_(nullptr), history_capacity_(0) {}
 
   explicit PageNode(std::size_t page_id, std::size_t k)
-    : page_id_(page_id), timestamp_(0), access_count_(0),
+    : page_id_(page_id), timestamp_(0), insertion_time_(0), access_count_(0),
       access_history_(nullptr), history_capacity_(k) {
     if (k > 0) {
       access_history_ = new std::size_t[k];
@@ -36,6 +36,7 @@ public:
   // Copy constructor
   PageNode(const PageNode& other)
     : page_id_(other.page_id_), timestamp_(other.timestamp_),
+      insertion_time_(other.insertion_time_),
       access_count_(other.access_count_), history_capacity_(other.history_capacity_) {
     if (other.access_history_ != nullptr && history_capacity_ > 0) {
       access_history_ = new std::size_t[history_capacity_];
@@ -56,6 +57,7 @@ public:
 
       page_id_ = other.page_id_;
       timestamp_ = other.timestamp_;
+      insertion_time_ = other.insertion_time_;
       access_count_ = other.access_count_;
       history_capacity_ = other.history_capacity_;
 
@@ -74,6 +76,11 @@ public:
   void RecordAccess(std::size_t current_time) {
     timestamp_ = current_time;
 
+    // Set insertion time on first access
+    if (access_count_ == 0) {
+      insertion_time_ = current_time;
+    }
+
     // Update access history for LRU-K
     if (access_history_ != nullptr && history_capacity_ > 0) {
       // Shift history
@@ -88,6 +95,7 @@ public:
 
   std::size_t GetPageId() const { return page_id_; }
   std::size_t GetTimestamp() const { return timestamp_; }
+  std::size_t GetInsertionTime() const { return insertion_time_; }
   std::size_t GetAccessCount() const { return access_count_; }
   std::size_t GetKthLastAccess(std::size_t k) const {
     if (access_history_ == nullptr || k == 0 || k > history_capacity_) {
@@ -99,6 +107,7 @@ public:
 private:
   std::size_t page_id_;
   std::size_t timestamp_;         // Last access time
+  std::size_t insertion_time_;    // Time when first added to cache (for FIFO)
   std::size_t access_count_;      // Total access count
   std::size_t* access_history_;   // Array to store k most recent access times
   std::size_t history_capacity_;  // Size of history array (k value)
@@ -283,13 +292,11 @@ public:
 
     switch (policy) {
       case ReplacementPolicy::kFIFO: {
-        // Evict the page with smallest timestamp (earliest added)
-        std::size_t min_time = pages_[0]->GetTimestamp();
+        // Evict the page with earliest insertion time
+        std::size_t min_insertion_time = pages_[0]->GetInsertionTime();
         for (std::size_t i = 1; i < current_size_; ++i) {
-          std::size_t first_access = pages_[i]->GetKthLastAccess(pages_[i]->GetAccessCount());
-          std::size_t min_first_access = pages_[evict_idx]->GetKthLastAccess(pages_[evict_idx]->GetAccessCount());
-
-          if (first_access < min_first_access) {
+          if (pages_[i]->GetInsertionTime() < min_insertion_time) {
+            min_insertion_time = pages_[i]->GetInsertionTime();
             evict_idx = i;
           }
         }
